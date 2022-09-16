@@ -1,0 +1,47 @@
+CC     = "C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\bin\lcc64.exe"
+LD     = "C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\bin\lcclnk64.exe"
+LIBCMD = "C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\bin\lcclib64.exe"
+CFLAGS = -w -dll -noregistrylookup  -c -Zp8 -DLCC_WIN64 -DMATLAB_MEX_FILE -nodeclspec  
+LDFLAGS = -s -dll -L"C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\lib64" -entry LibMain -map sfun.map 
+LIBFLAGS = 
+
+OBJECTS = \
+	"c_mexapi_version.obj"\
+	"lccstub.obj"\
+	"receiveDBPSK____PLUTO_SDR_cgxe.obj"\
+	"m_Bul6X3hpblE5kWOkaudxB.obj"\
+	"receiveDBPSK____PLUTO_SDR_cgxe_registry.obj"\
+	"receiveDBPSK____PLUTO_SDR_cgxe.def"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmx.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmex.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmat.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libfixedpoint.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libut.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwmathutil.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libemlrt.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwcgxert.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwcgxeooprt.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwslexec_simbridge.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwslccrt.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwstringutil.lib"\
+	"C:\Program Files\MATLAB\R2022a\lib\win64\libmwipp.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libcovrt.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwsl_sfcn_cov_bridge.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\libmwdsp_halidesim.lib"\
+	"C:\Program Files\MATLAB\R2022a\extern\lib\win64\microsoft\dspcgsim.lib"\
+
+INCLUDE_PATH= -I"C:\Program Files\MATLAB\R2022a\extern\include"  -I"C:\Program Files\MATLAB\R2022a\simulink\include"  -I"C:\Program Files\MATLAB\R2022a\rtw\c\src"  -I"C:\Users\hpwel\downloads\SDR LAB\implemented by me\DBPSK\slprj\_cgxe\receivedbpsk____pluto_sdr\src"  -I"C:\Users\hpwel\downloads\SDR LAB\implemented by me\DBPSK"  -I"C:\Users\hpwel\Downloads\SDR LAB\Implemented by me\DBPSK\slprj\_cprj"  -I"C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\include64"  -I"C:\Users\hpwel\Downloads\SDR LAB\Implemented by me\DBPSK\slprj\_cgxe\receiveDBPSK____PLUTO_SDR\src"  -I"C:\Users\hpwel\Downloads\SDR LAB\Implemented by me\DBPSK" 
+ 
+
+receiveDBPSK____PLUTO_SDR_cgxe.mexw64 : $(MAKEFILE) $(OBJECTS)
+	$(LD) $(LDFLAGS) -o receiveDBPSK____PLUTO_SDR_cgxe.mexw64 @receiveDBPSK____PLUTO_SDR_cgxe.lmko
+c_mexapi_version.obj :	"C:\Program Files\MATLAB\R2022a\extern\version\c_mexapi_version.c"
+	$(CC) $(CFLAGS) $(INCLUDE_PATH) "C:\Program Files\MATLAB\R2022a\extern\version\c_mexapi_version.c"
+lccstub.obj :	"C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\mex\lccstub.c"
+	$(CC) $(CFLAGS) $(INCLUDE_PATH) "C:\Program Files\MATLAB\R2022a\sys\lcc64\lcc64\mex\lccstub.c"
+receiveDBPSK____PLUTO_SDR_cgxe.obj :	"receiveDBPSK____PLUTO_SDR_cgxe.c"
+	$(CC) $(CFLAGS) $(INCLUDE_PATH) "receiveDBPSK____PLUTO_SDR_cgxe.c"
+m_Bul6X3hpblE5kWOkaudxB.obj :	"m_Bul6X3hpblE5kWOkaudxB.c"
+	$(CC) $(CFLAGS) $(INCLUDE_PATH) "m_Bul6X3hpblE5kWOkaudxB.c"
+receiveDBPSK____PLUTO_SDR_cgxe_registry.obj :	"receiveDBPSK____PLUTO_SDR_cgxe_registry.c"
+	$(CC) $(CFLAGS) $(INCLUDE_PATH) "receiveDBPSK____PLUTO_SDR_cgxe_registry.c"
