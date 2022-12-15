@@ -1,6 +1,17 @@
+%% Change parameters such as Fs,SamplesPerFrame in the code correspondingly.
 %clear all
 %close all
-FFTLength = 64;
+%% Hardware Parameters
+rx_object = sdrrx('Pluto',...
+           'RadioID','usb:0',...
+           'CenterFrequency',905e6,...
+           'BasebandSampleRate', 1e6,...   % Bandwidth
+           'ChannelMapping', 1,...
+           'Gain',40,...
+           'OutputDataType','double',...
+           'SamplesPerFrame', 200000);
+alpha = rx_object();
+FFTLength = 64
 NumGuardBandCarriers = [6; 5];
 PilotCarrierIndices = [12;26;40;54];
 CyclicPrefixLength = 16;
@@ -26,11 +37,11 @@ Preamble = double(getOFDMPreambleAndPilot('Preamble',FFTLength, NumGuardBandCarr
 
  stem(M)
  grid on;
- xlabel('k')
+ xlabel('k');
  ylabel('M')
  legend('Autocorrelation')
  title('Packet detection')
-%% Estimating the positions of packets.
+ %% Estimating the positions of packets.
  count = 0;
  target = 0;
  Est_Indices = zeros(30,1);
@@ -80,7 +91,20 @@ for i = 1:30
         % Display
         disp(LSTF_Start_est)
     end
-     
+    % % Determine CFO
+    % % CFO Estimation
+    Fs = 1e6;
+    NumSamples = 300;
+    subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
+    %Determine frequency offsets
+    freqEst = zeros(NumSamples,1);
+    for k2=1:NumSamples
+        P = (conj(r(k2:k2+m-1))).'*r(k2+L:k2+m+L-1);
+        freqEst(k2) = Fs/L*(angle(P)/(2*pi));
+    end
+    %Select estimate at offset estimated position
+    freqEst
+    freqEstimate = freqEst(LSTF_Start_est+1) %(why?)-understood 
     %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% 
     % Equalization Example
     r = r(LSTF_Start_est+1:end); % Removing offset
@@ -103,6 +127,10 @@ for i = 1:30
     ls = rp./p; % Least-square estimate
     chanEstPilots = mean(ls,2); % Average over both symbols
     CSIPilots = real(chanEstPilots.*conj(chanEstPilots));  % (CSI-Channel state information)
+    %% CFO compensation for Header 
+    for c = 321:400
+        r(c) = r(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+    end  
     %% Demodulating Header
     data = r(321:400);
     DataOFDMMod = comm.OFDMModulator(...
@@ -133,7 +161,7 @@ for i = 1:30
         sig = postLLTFEqData(:,symbol).*e;
         correctedSymbols(:,symbol) = sig;
         % Visualize
-        tt1(sig);tt2(postLLTFEqData(:,symbol));pause(0.1)
+        tt1(sig);hold on;tt2(postLLTFEqData(:,symbol));pause(0.1)
     end
     bpskdemodulator = comm.BPSKDemodulator; 
     symPostBPSKDemod = bpskdemodulator(double(correctedSymbols(:)));
@@ -152,6 +180,10 @@ data = alpha(Est_Indices(i)-100+LSTF_Start_est:Est_Indices(i)-100+LSTF_Start_est
 
 if NumFrames == 1
     correctedSymbols = zeros(48,NumOFDMSymbolsAfterHeader);
+    %% CFO compensation for first frame
+    for c = (401):(400+NumOFDMSymbolsAfterHeader*80)
+        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+    end  
     for j = 1:NumOFDMSymbolsAfterHeader
         [dataFreq,pilots] = odd(data((400+80*(j-1)+1):400+(80*(j))));
         % Apply LLTF's estimate to data symbols and data pilots
@@ -164,10 +196,14 @@ if NumFrames == 1
         sig = postLLTFEqData(:).*e;
         correctedSymbols(:,j) = sig;
         % Visualize
-        %%%tt1(sig);tt2(postLLTFEqData(:,symbol));pause(0.1)
+        tt1(sig);hold on;tt2(postLLTFEqData(:,symbol));pause(0.1)
     end
 else
     correctedSymbols = zeros(48,NumOFDMSymbolsAfterHeader);
+    %% CFO compensation for first frame
+    for c = (401):(400+100*80)
+        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+    end
     % Demodulating first frame
     for j = 1:100
         [dataFreq,pilots] = odd(data((400+80*(j-1)+1):400+(80*(j))));
@@ -186,6 +222,23 @@ else
         if FrameNo == NumFrames
             break
         end  
+        %% CFO Estimation for subsequent frames.
+        Fs = 1e6;
+        NumSamples = 300;
+        %subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
+        %Determine frequency offsets
+        freqEst = zeros(NumSamples,1);
+        for k2=1:NumSamples
+            P = (conj(data(8320*(FrameNo-1)+80+k2:8320*(FrameNo-1)+80+k2+m-1))).'*data(8320*(FrameNo-1)+80+k2+L:8320*(FrameNo-1)+80+k2+m+L-1);
+            freqEst(k2) = Fs/L*(angle(P)/(2*pi));
+        end
+        %Select estimate at offset estimated position
+        freqEst
+        freqEstimate = freqEst(1) %(why?)-understood 
+        %% CFO Correction for subsequent frames.
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+100*80)
+        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+        end
         %% Channel estimation
         preambleOFDMMod = comm.OFDMModulator(...
             'FFTLength' ,           FFTLength,...
@@ -217,9 +270,27 @@ else
             sig = postLLTFEqData(:).*e;
             correctedSymbols(:,j) = sig;
         end
-    end     
-        %% Channel estimation for last frame
+    end   
+        %% LAST FRAME
         FrameNo = NumFrames;
+        % CFO Estimation for last frame
+        Fs = 1e6;
+        NumSamples = 300;
+        subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
+        %Determine frequency offsets
+        freqEst = zeros(NumSamples,1);
+        for k2=1:NumSamples
+            P = (conj(data(8320*(FrameNo-1)+80+k2:8320*(FrameNo-1)+80+k2+m-1))).'*data(8320*(FrameNo-1)+80+k2+L:8320*(FrameNo-1)+80+k2+m+L-1);
+            freqEst(k2) = Fs/L*(angle(P)/(2*pi));
+        end
+        %Select estimate at offset estimated position
+        freqEst
+        freqEstimate = freqEst(1) %(why?)-understood 
+        %% CFO compensation for last frame
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+(NumOFDMSymbolsAfterHeader-100*(FrameNo-1))*80)
+        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+        end
+        %% Channel estimation for last frame
         preambleOFDMMod = comm.OFDMModulator(...
             'FFTLength' ,           FFTLength,...
             'NumGuardBandCarriers', NumGuardBandCarriers,...
@@ -248,10 +319,11 @@ else
             e = conj(mean(p.*conj(Pilots(:))));
             % Equalize
             sig = postLLTFEqData(:).*e;
-            correctedSymbols(:,j) = sig;
+            correctedSymbols(:,j) = sig; 
         end    
-end 
-
+ end 
+tt3 = comm.ConstellationDiagram;
+tt3(correctedSymbols(:))
 bpskdemodulator = comm.BPSKDemodulator; 
 symPostBPSKDemod = bpskdemodulator(double(correctedSymbols(:)));
 UsefulData = symPostBPSKDemod(1:Header*8);

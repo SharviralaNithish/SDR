@@ -105,10 +105,20 @@
          
  % Repeat the frame
  %y = repmat([Preamble; symPostOFDM], NumFrames, 1)
- %y = repmat([randi([0,1],59,1);y],30,1) %For simulations.
+ %y = repmat([randi([0,1],59,1);y],10,1) %For simulations.
  SamplesPerFrame = size(y,1);
  SampleTime = 1/SamplesPerFrame;    
-
+ % Transmission through PLUTO SDR
+ %Mode='transmitRepeat'; % Select Mode
+ tx_object = sdrtx('Pluto', ...
+           'RadioID',            'usb:0', ...
+           'CenterFrequency',      905e6, ...
+           'BasebandSampleRate',   1e6, ...  % Bandwidth
+           'Gain',                 -30, ...
+           'ChannelMapping',       1);
+ transmitRepeat(tx_object,y);
+ tx_object(y)
+ 
 % % Rdata = y(321:400)
 % % DataOFDMMod = comm.OFDMModulator(...
 % %  'FFTLength' , FFTLength, ...
