@@ -9,6 +9,8 @@
  CyclicPrefixLength = 16;
  PilotCarrierIndices = [12;26;40;54];
  NumOFDMSymInPreamble = 5;
+ Fs = 1e6
+ Ts = 1/Fs
  %NumBitsPerCharacter = 8;
  %% Convert message to bits
 
@@ -108,6 +110,11 @@
  %y = repmat([randi([0,1],59,1);y],10,1) %For simulations.
  SamplesPerFrame = size(y,1);
  SampleTime = 1/SamplesPerFrame;    
+ subchannelSpacing = Fs/FFTLength;
+ CFO = subchannelSpacing*0.02
+ pfOffset = comm.PhaseFrequencyOffset('SampleRate',Fs,...
+ 'FrequencyOffset',CFO);
+ y = pfOffset(y);
  % Transmission through PLUTO SDR
  %Mode='transmitRepeat'; % Select Mode
  tx_object = sdrtx('Pluto', ...

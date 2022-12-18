@@ -11,11 +11,14 @@ rx_object = sdrrx('Pluto',...
            'OutputDataType','double',...
            'SamplesPerFrame', 200000);
 alpha = rx_object();
+
 FFTLength = 64
 NumGuardBandCarriers = [6; 5];
 PilotCarrierIndices = [12;26;40;54];
 CyclicPrefixLength = 16;
 prb = [0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1]';
+Fs = 1e6;
+Ts = 1/Fs;
 %NumOFDMSymbols = 11
 %numChars = 66
 Preamble = double(getOFDMPreambleAndPilot('Preamble',FFTLength, NumGuardBandCarriers));
@@ -91,20 +94,6 @@ for i = 1:30
         % Display
         disp(LSTF_Start_est)
     end
-    % % Determine CFO
-    % % CFO Estimation
-    Fs = 1e6;
-    NumSamples = 300;
-    subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
-    %Determine frequency offsets
-    freqEst = zeros(NumSamples,1);
-    for k2=1:NumSamples
-        P = (conj(r(k2:k2+m-1))).'*r(k2+L:k2+m+L-1);
-        freqEst(k2) = Fs/L*(angle(P)/(2*pi));
-    end
-    %Select estimate at offset estimated position
-    freqEst
-    freqEstimate = freqEst(LSTF_Start_est+1) %(why?)-understood 
     %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% %% 
     % Equalization Example
     r = r(LSTF_Start_est+1:end); % Removing offset
@@ -119,7 +108,7 @@ for i = 1:30
     LLTF = Preamble(161:161+160-1);
     rLLTF = r(161+32:161+160-1);
     [rLLTFFreq,rp] = od(rLLTF);
-    [LLTFFreq,p] = od(LLTF(33:end));% remove CP
+    [LLTFFreq,p] = od(LLTF(33:end)); % remove CP
     % Estimate channel
     ls = rLLTFFreq./LLTFFreq; % Least-square estimate
     chanEst = mean(ls,2); % Average over both symbols
@@ -127,10 +116,33 @@ for i = 1:30
     ls = rp./p; % Least-square estimate
     chanEstPilots = mean(ls,2); % Average over both symbols
     CSIPilots = real(chanEstPilots.*conj(chanEstPilots));  % (CSI-Channel state information)
-    %% CFO compensation for Header 
-    for c = 321:400
-        r(c) = r(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
-    end  
+    %% CFO estimation for first frame
+    Short_preamble_slot_length = 16;
+    %% COARSE CFO Estimation
+    f_Coarse_est = zeros(9,1);
+    for FieldNo = 1:9
+    z = conj(r(Short_preamble_slot_length*(FieldNo-1)+1: ...
+        Short_preamble_slot_length*(FieldNo))).*r(Short_preamble_slot_length*(FieldNo)+1: ...
+        Short_preamble_slot_length*(FieldNo+1)); % [1x16]*[16x1]
+    z = sum( z , 'all' );
+    f_Coarse_est(FieldNo) = (1/(2*pi*Short_preamble_slot_length*Ts))*angle(z)
+    end
+    Net_f_Coarse_est = mean(f_Coarse_est,"all")
+    %% COARSE CFO Correction for preamble and Header
+    for c = 1:400
+        r(c) = r(c)/exp(1i*2*pi*Net_f_Coarse_est*(c-1)*Ts);
+    end    
+    
+    %% Fine CFO Estimation
+    z = conj(r(Short_preamble_slot_length*12+1: ...
+        Short_preamble_slot_length*16)).*r(Short_preamble_slot_length*16+1: ...
+        Short_preamble_slot_length*20); % [1x64]*[64x1]=[1x1]
+    z = sum( z , 'all' );
+    f_Fine_est = (1/(2*pi*64*Ts))*angle(z)
+    %% FINE CFO Correction for preamble and Header
+    for c = 1:400
+        r(c) = r(c)/exp(1i*2*pi*f_Fine_est*(c-1)*Ts);
+    end   
     %% Demodulating Header
     data = r(321:400);
     DataOFDMMod = comm.OFDMModulator(...
@@ -181,9 +193,17 @@ data = alpha(Est_Indices(i)-100+LSTF_Start_est:Est_Indices(i)-100+LSTF_Start_est
 if NumFrames == 1
     correctedSymbols = zeros(48,NumOFDMSymbolsAfterHeader);
     %% CFO compensation for first frame
+
+    % COARSE CFO Correction 
     for c = (401):(400+NumOFDMSymbolsAfterHeader*80)
-        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+        data(c) = data(c)/exp(1i*2*pi*Net_f_Coarse_est*(c-1)*Ts);
     end  
+     
+    % FINE CFO Correction
+    for c = (401):(400+NumOFDMSymbolsAfterHeader*80)
+        data(c) = data(c)/exp(1i*2*pi*f_Fine_est*(c-1)*Ts);
+    end  
+    %% Demodulation and Equalization first frame.
     for j = 1:NumOFDMSymbolsAfterHeader
         [dataFreq,pilots] = odd(data((400+80*(j-1)+1):400+(80*(j))));
         % Apply LLTF's estimate to data symbols and data pilots
@@ -201,10 +221,16 @@ if NumFrames == 1
 else
     correctedSymbols = zeros(48,NumOFDMSymbolsAfterHeader);
     %% CFO compensation for first frame
+    % COARSE CFO Correction 
     for c = (401):(400+100*80)
-        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
-    end
-    % Demodulating first frame
+        data(c) = data(c)/exp(1i*2*pi*Net_f_Coarse_est*(c-1)*Ts);
+    end  
+     
+    % FINE CFO Correction
+    for c = (401):(400+100*80)
+        data(c) = data(c)/exp(1i*2*pi*f_Fine_est*(c-1)*Ts);
+    end 
+    %% Demodulation and Equalization first frame.
     for j = 1:100
         [dataFreq,pilots] = odd(data((400+80*(j-1)+1):400+(80*(j))));
         % Apply LLTF's estimate to data symbols and data pilots
@@ -223,21 +249,33 @@ else
             break
         end  
         %% CFO Estimation for subsequent frames.
-        Fs = 1e6;
-        NumSamples = 300;
-        %subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
-        %Determine frequency offsets
-        freqEst = zeros(NumSamples,1);
-        for k2=1:NumSamples
-            P = (conj(data(8320*(FrameNo-1)+80+k2:8320*(FrameNo-1)+80+k2+m-1))).'*data(8320*(FrameNo-1)+80+k2+L:8320*(FrameNo-1)+80+k2+m+L-1);
-            freqEst(k2) = Fs/L*(angle(P)/(2*pi));
+
+        % COARSE CFO Estimation
+        f_Coarse_est = zeros(9,1);
+        for FieldNo = 1:9
+        z = conj(data(8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo-1)+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo))).*data(8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo)+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo+1)); % [1x16]*[16x1]
+        z = sum( z , 'all' );
+        f_Coarse_est(FieldNo) = (1/(2*pi*Short_preamble_slot_length*Ts))*angle(z)
         end
-        %Select estimate at offset estimated position
-        freqEst
-        freqEstimate = freqEst(1) %(why?)-understood 
-        %% CFO Correction for subsequent frames.
-        for c = (8000*(FrameNo-1)+80+320*(FrameNo)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+100*80)
-        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+        Net_f_Coarse_est = mean(f_Coarse_est,"all")
+
+        % COARSE CFO Correction 
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo-1)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+100*80)
+        data(c) = data(c)/exp(1i*2*pi*Net_f_Coarse_est*(c-1)*Ts);
+        end
+
+        % Fine CFO Estimation
+        z = conj(data(8320*(FrameNo-1)+80+Short_preamble_slot_length*12+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*16)).*data(8320*(FrameNo-1)+80+Short_preamble_slot_length*16+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*20); % [1x64]*[64x1]=[1x1]
+        z = sum( z , 'all' );
+        f_Fine_est = (1/(2*pi*64*Ts))*angle(z)
+
+        % FINE CFO Estimation   
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo-1)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+100*80)
+        data(c) = data(c)/exp(1i*2*pi*f_Fine_est*(c-1)*Ts);
         end
         %% Channel estimation
         preambleOFDMMod = comm.OFDMModulator(...
@@ -273,22 +311,35 @@ else
     end   
         %% LAST FRAME
         FrameNo = NumFrames;
-        % CFO Estimation for last frame
-        Fs = 1e6;
-        NumSamples = 300;
-        subchannelSpacing = Fs/FFTLength; %(= 1/T = 1/(NTs) = Fs/N)
-        %Determine frequency offsets
-        freqEst = zeros(NumSamples,1);
-        for k2=1:NumSamples
-            P = (conj(data(8320*(FrameNo-1)+80+k2:8320*(FrameNo-1)+80+k2+m-1))).'*data(8320*(FrameNo-1)+80+k2+L:8320*(FrameNo-1)+80+k2+m+L-1);
-            freqEst(k2) = Fs/L*(angle(P)/(2*pi));
+
+        %% CFO Estimation for subsequent frames.
+
+        % COARSE CFO Estimation
+        f_Coarse_est = zeros(9,1);
+        for FieldNo = 1:9
+        z = conj(data(8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo-1)+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo))).*data(8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo)+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*(FieldNo+1)); % [1x16]*[16x1]
+        z = sum( z , 'all' );
+        f_Coarse_est(FieldNo) = (1/(2*pi*Short_preamble_slot_length*Ts))*angle(z)
         end
-        %Select estimate at offset estimated position
-        freqEst
-        freqEstimate = freqEst(1) %(why?)-understood 
-        %% CFO compensation for last frame
-        for c = (8000*(FrameNo-1)+80+320*(FrameNo)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+(NumOFDMSymbolsAfterHeader-100*(FrameNo-1))*80)
-        data(c) = data(c)/exp(1i*2*pi*freqEstimate*(c-1)/Fs);
+        Net_f_Coarse_est = mean(f_Coarse_est,"all")
+
+        % COARSE CFO Correction 
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo-1)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+(NumOFDMSymbolsAfterHeader-100*(FrameNo-1))*80)
+        data(c) = data(c)/exp(1i*2*pi*Net_f_Coarse_est*(c-1)*Ts);
+        end
+
+        % Fine CFO Estimation
+        z = conj(data(8320*(FrameNo-1)+80+Short_preamble_slot_length*12+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*16)).*data(8320*(FrameNo-1)+80+Short_preamble_slot_length*16+1: ...
+            8320*(FrameNo-1)+80+Short_preamble_slot_length*20); % [1x64]*[64x1]=[1x1]
+        z = sum( z , 'all' );
+        f_Fine_est = (1/(2*pi*64*Ts))*angle(z)
+
+        % FINE CFO Estimation   
+        for c = (8000*(FrameNo-1)+80+320*(FrameNo-1)+1):(8000*(FrameNo-1)+80+320*(FrameNo)+(NumOFDMSymbolsAfterHeader-100*(FrameNo-1))*80)
+        data(c) = data(c)/exp(1i*2*pi*f_Fine_est*(c-1)*Ts);
         end
         %% Channel estimation for last frame
         preambleOFDMMod = comm.OFDMModulator(...
